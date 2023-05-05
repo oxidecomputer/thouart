@@ -14,7 +14,7 @@ pub enum Error {
 // https://docs.rs/tokio/latest/tokio/io/trait.AsyncReadExt.html#method.read_exact
 // is not cancel safe! Meaning reads from tokio::io::stdin are not cancel
 // safe. Spawn a separate task to read and put bytes onto this channel.
-pub async fn stdin_read_task<I: AsyncReadExt + Unpin + Send + 'static>(
+pub(crate) async fn stdin_read_task<I: AsyncReadExt + Unpin + Send + 'static>(
     mut stdin: I,
     stdintx: mpsc::Sender<Vec<u8>>,
 ) {
@@ -31,7 +31,7 @@ pub async fn stdin_read_task<I: AsyncReadExt + Unpin + Send + 'static>(
     }
 }
 
-pub async fn stdin_relay_task(
+pub(crate) async fn stdin_relay_task(
     mut stdinrx: mpsc::Receiver<Vec<u8>>,
     wstx: mpsc::Sender<Vec<u8>>,
     mut escape: Option<EscapeSequence>,
@@ -61,6 +61,10 @@ pub async fn stdin_relay_task(
     }
 }
 
+/// Stateful abstraction for filtering input bytes to determine if the given
+/// escape sequence has been detected, and what bytes are ready to be sent
+/// for normal processing (i.e. aren't an incomplete match of the escape
+/// sequence).
 pub struct EscapeSequence {
     bytes: Vec<u8>,
     prefix_length: usize,
@@ -100,10 +104,10 @@ impl EscapeSequence {
         })
     }
 
-    // return the bytes we can safely commit to sending to the serial port, and
-    // determine if the user has entered the escape sequence completely.
-    // returns true iff the program should exit.
-    fn process(&mut self, inbuf: Vec<u8>) -> (Vec<u8>, bool) {
+    /// Return the bytes we can safely commit to sending to the terminal, and
+    /// determine if the user has entered the escape sequence completely.
+    /// Returns true iff the program should exit.
+    pub fn process(&mut self, inbuf: Vec<u8>) -> (Vec<u8>, bool) {
         // Put bytes from inbuf to outbuf, but don't send characters in the
         // escape string sequence unless we bail.
         let mut outbuf = Vec::with_capacity(inbuf.len());

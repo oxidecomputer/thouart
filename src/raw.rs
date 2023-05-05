@@ -10,7 +10,7 @@ pub enum Error {
 }
 
 /// Guard object that will set the terminal to raw mode and restore it
-/// to its previous state when it's dropped
+/// to its previous state when it's dropped.
 pub struct RawTermiosGuard(libc::c_int, libc::termios);
 
 impl RawTermiosGuard {
