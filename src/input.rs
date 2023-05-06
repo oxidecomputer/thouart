@@ -91,6 +91,21 @@ pub struct EscapeSequence {
 }
 
 impl EscapeSequence {
+    /// If the given `bytes` sequence is ever fed through any successive or
+    /// individual calls to [EscapeSequence::process], the client should exit.
+    ///
+    /// `prefix_length` is the number of bytes from the beginning of `bytes`
+    /// that should be forwarded through prior to buffering inputs until a
+    /// mismatch is encountered.
+    ///
+    /// For example, to mimic the enter-tilde-dot escape sequence behavior
+    /// from SSH, such that the newline gets sent to the remote machine
+    /// immediately while still continuing to check for the rest of the
+    /// sequence and not send a subsequent `~` unless it's followed by
+    /// something other than a `.`, you would construct this like so:
+    /// ```
+    /// thouart::EscapeSequence::new(b"\n~.".to_vec(), 1).unwrap();
+    /// ```
     pub fn new(bytes: Vec<u8>, prefix_length: usize) -> Result<Self, Error> {
         let escape_len = bytes.len();
         if prefix_length > escape_len {

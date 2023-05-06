@@ -2,8 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-/// This crate provides some convenience code for implementing an interactive
-/// raw-mode terminal interface in a CLI tool. See [Console].
+//! This crate provides some convenience code for implementing an interactive
+//! raw-mode terminal interface in a CLI tool. See [Console].
+
 mod input;
 mod raw;
 
@@ -32,12 +33,25 @@ pub enum Error {
     StdoutWrite(#[from] std::io::Error),
 }
 
-/// A simple abstraction over async I/O providing cancel-safe input suitable
-/// for use in e.g. `tokio::select!`, built-in support for escape-sequences
-/// to end the input stream, and a provided event loop for attaching to raw
-/// terminal bytes being sent to/from a WebSocket as Binary frames (provided
-/// no other WebSocket frames need to be handled). Holds a [RawTermiosGuard],
-/// and thus puts the given output into raw-mode, until dropped.
+/// A simple abstraction over a TTY's async I/O streams.
+///
+/// It provides:
+/// - cancel-safe access to user input via [`Console::read_stdin`], suitable for
+///   use in [`tokio::select!`]
+/// - an implementation of escape-sequences which, when received from the user,
+///   will end the stream early.
+/// - [`Console::attach_to_websocket`], which will bidirectionally forward data
+///   between a WebSocket and the wrapped console streams used to construct the
+///   `Console` until a termination condition is met (see function docs for
+///   details).
+///
+/// Typically one will use stdin/stdout, which can be constructed with
+/// [`Console::<tokio::io::Stdout>::new_stdio`] but other TTYs, (e.g. COM
+/// ports, `/dev/ttyUSB*`, etc.) may be used. Non-TTY streams are not currently
+/// supported.
+///
+/// `Console` places the provided output into raw-mode when created and restores
+/// the output it to its previous state when dropped.
 pub struct Console<O: AsyncWriteExt + Unpin + Send> {
     stdout: O,
     relay_rx: mpsc::Receiver<Vec<u8>>,
