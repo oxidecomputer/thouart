@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 use std::os::fd::RawFd;
 use thiserror::Error;
 
@@ -10,7 +14,7 @@ pub enum Error {
 }
 
 /// Guard object that will set the terminal to raw mode and restore it
-/// to its previous state when it's dropped
+/// to its previous state when it's dropped.
 pub struct RawTermiosGuard(libc::c_int, libc::termios);
 
 impl RawTermiosGuard {
