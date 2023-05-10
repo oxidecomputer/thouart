@@ -19,7 +19,8 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::task;
-use tokio_tungstenite::tungstenite::protocol::Role;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Role};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
@@ -31,6 +32,8 @@ pub enum Error {
     WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
     #[error("Writing to stdout: {0}")]
     StdoutWrite(#[from] std::io::Error),
+    #[error("Server error: {0}")]
+    ServerError(String),
 }
 
 /// A simple abstraction over a TTY's async I/O streams.
@@ -143,13 +146,37 @@ impl<O: AsyncWriteExt + Unpin + Send> Console<O> {
                 out_buf = ws_stream.next() => {
                     match out_buf {
                         Some(Ok(Message::Binary(data))) => self.write_stdout(&data).await?,
-                        Some(Ok(Message::Close(..))) | None => break,
+                        Some(Ok(Message::Close(Some(CloseFrame {code, reason})))) => {
+                            eprint!("\r\nConnection closed: {:?}\r\n", code);
+                            match code {
+                                CloseCode::Abnormal
+                                | CloseCode::Error
+                                | CloseCode::Extension
+                                | CloseCode::Invalid
+                                | CloseCode::Policy
+                                | CloseCode::Protocol
+                                | CloseCode::Size
+                                | CloseCode::Unsupported => {
+                                    return Err(Error::ServerError(reason.to_string()));
+                                }
+                                _ => break,
+                            }
+                        }
+                        Some(Ok(Message::Close(None))) => {
+                            eprint!("\r\nConnection closed.\r\n");
+                            break;
+                        }
+                        None => {
+                            eprint!("\r\nConnection lost.\r\n");
+                            break;
+                        }
                         _ => continue,
                     }
                 }
             }
         }
-        ws_stream.send(Message::Close(None)).await?;
+        // let _: the connection may have already been dropped at this point.
+        let _ = ws_stream.send(Message::Close(None)).await;
         Ok(())
     }
 }
