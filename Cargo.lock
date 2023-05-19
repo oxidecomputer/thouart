@@ -430,6 +430,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite",
+ "winapi",
 ]
 
 [[package]]

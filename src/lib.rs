@@ -9,10 +9,13 @@ mod input;
 mod raw;
 
 pub use crate::input::EscapeSequence;
-pub use crate::raw::RawTermiosGuard;
+pub use crate::raw::RawModeGuard;
 
 use crate::input::{stdin_read_task, stdin_relay_task};
-use std::os::fd::AsRawFd;
+#[cfg(target_family = "unix")]
+use std::os::fd::AsRawFd as AsRawFdHandle;
+#[cfg(target_family = "windows")]
+use std::os::windows::io::AsRawHandle as AsRawFdHandle;
 
 use futures::{SinkExt, StreamExt};
 use thiserror::Error;
@@ -60,19 +63,25 @@ pub struct Console<O: AsyncWriteExt + Unpin + Send> {
     relay_rx: mpsc::Receiver<Vec<u8>>,
     read_handle: task::JoinHandle<()>,
     relay_handle: task::JoinHandle<()>,
-    raw_guard: Option<RawTermiosGuard>,
+    raw_guard: Option<RawModeGuard>,
 }
 
-impl<O: AsyncWriteExt + Unpin + Send + AsRawFd> Console<O> {
+impl<O: AsyncWriteExt + Unpin + Send + AsRawFdHandle> Console<O> {
     /// Construct with arbitrary [AsyncReadExt] and [AsyncWriteExt] streams,
     /// supporting use cases where we might be talking to something other than
     /// the same terminal from which a tool is being invoked.
-    pub async fn new<I: AsyncReadExt + Unpin + Send + 'static>(
+    pub async fn new<I: AsyncReadExt + Unpin + Send + AsRawFdHandle + 'static>(
         stdin: I,
         stdout: O,
         escape: Option<EscapeSequence>,
     ) -> Result<Self, Error> {
-        let raw_guard = Some(RawTermiosGuard::stdio_guard(stdout.as_raw_fd())?);
+        #[cfg(target_family = "unix")]
+        let raw_guard = Some(RawModeGuard::new(stdout.as_raw_fd())?);
+        #[cfg(target_family = "windows")]
+        let raw_guard = Some(RawModeGuard::new(
+            stdin.as_raw_handle(),
+            stdout.as_raw_handle(),
+        )?);
         Ok(Self::new_inner(stdin, stdout, escape, raw_guard))
     }
 }
@@ -90,7 +99,7 @@ impl<O: AsyncWriteExt + Unpin + Send> Console<O> {
         stdin: I,
         stdout: O,
         escape: Option<EscapeSequence>,
-        raw_guard: Option<RawTermiosGuard>,
+        raw_guard: Option<RawModeGuard>,
     ) -> Self {
         let (read_tx, read_rx) = mpsc::channel(16);
         let (relay_tx, relay_rx) = mpsc::channel(16);
