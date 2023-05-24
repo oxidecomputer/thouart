@@ -99,6 +99,59 @@ mod platform_impl {
             }
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use std::os::windows::io::RawHandle;
+        use std::ptr::null_mut;
+        use libloading::{Library, Symbol};
+        use winapi::shared::minwindef::DWORD;
+        use winapi::shared::winerror::S_OK;
+        use winapi::um::namedpipeapi::CreatePipe;
+        use winapi::um::winnt::{HANDLE, HRESULT};
+        use winapi::um::wincon::COORD;
+        use crate::RawModeGuard;
+
+        #[test]
+        fn test_conpty() -> Result<(), Box<dyn std::error::Error>> {
+            unsafe {
+                let dll = Library::new("kernel32")?;
+                let create_pseudo_console: Symbol<
+                    unsafe extern "C" fn(COORD, HANDLE, HANDLE, DWORD, *mut HANDLE) -> HRESULT
+                > = dll.get(b"CreatePseudoConsole")?;
+                let close_pseudo_console: Symbol<
+                    unsafe extern "C" fn(HANDLE)
+                > = dll.get(b"ClosePseudoConsole")?;
+
+                let mut in_test = null_mut();
+                let mut in_con = null_mut();
+                let mut out_test = null_mut();
+                let mut out_con = null_mut();
+                let mut device = null_mut();
+
+                CreatePipe(&mut in_con, &mut in_test, null_mut(), 0);
+                CreatePipe(&mut out_test, &mut out_con, null_mut(), 0);
+
+                let res = create_pseudo_console(COORD { X: 80, Y: 25 }, in_con, out_con, 0, &mut device);
+                assert_eq!(res, S_OK);
+
+                let before = super::get_mode(in_test)?;
+
+                let raw_guard = RawModeGuard::new(in_test as RawHandle, out_test as RawHandle)?;
+
+                let during = super::get_mode(in_test)?;
+                assert_ne!(before, during);
+
+                drop(raw_guard);
+
+                let after = super::get_mode(in_test)?;
+                assert_eq!(before, after);
+
+                close_pseudo_console(device);
+                Ok(())
+            }
+        }
+    }
 }
 
 #[cfg(target_family = "unix")]
@@ -150,3 +203,22 @@ mod platform_impl {
         }
     }
 }
+
+
+/*
+#[cfg(test)]
+mod tests {
+    use portable_pty::PtySize;
+
+    #[test]
+    fn test_syscalls_succeed() {
+        let sys = portable_pty::native_pty_system();
+
+        let mut pair = sys.openpty(PtySize::default()).unwrap();
+        let writer = pair.master.take_writer().unwrap();
+        let reader = pair.master.try_clone_reader().unwrap();
+
+        //RawModeGuard::new(writer.)
+    }
+}
+*/
