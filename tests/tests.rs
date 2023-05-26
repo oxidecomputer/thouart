@@ -1,5 +1,5 @@
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
-use portable_pty::{CommandBuilder, native_pty_system, PtySize};
 
 #[test]
 fn test_portable_pty() -> Result<(), Box<dyn std::error::Error>> {
