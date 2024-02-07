@@ -12,12 +12,17 @@ pub use crate::input::EscapeSequence;
 pub use crate::raw::RawModeGuard;
 
 use crate::input::{stdin_read_task, stdin_relay_task};
+
 #[cfg(target_family = "unix")]
 use std::os::fd::AsRawFd as AsRawFdHandle;
 #[cfg(target_family = "windows")]
 use std::os::windows::io::AsRawHandle as AsRawFdHandle;
 
-use futures::{SinkExt, StreamExt};
+use futures::stream::FuturesUnordered;
+#[cfg(target_family = "unix")]
+use tokio::signal::unix::{signal, SignalKind};
+
+use futures::{FutureExt, SinkExt, StreamExt};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
@@ -37,6 +42,8 @@ pub enum Error {
     StdoutWrite(#[from] std::io::Error),
     #[error("Server error: {0}")]
     ServerError(String),
+    #[error("Terminated by SIG{0}")]
+    Signal(&'static str),
 }
 
 /// A simple abstraction over a TTY's async I/O streams.
@@ -172,7 +179,28 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
         &mut self,
         upgraded: impl AsyncRead + AsyncWrite + Unpin,
     ) -> Result<(), Error> {
+        // need Signal structs to live at least as long as their futures
+        #[cfg(target_family = "unix")]
+        let mut signal_storage = Vec::new();
+
+        let mut signaled = FuturesUnordered::new();
+
+        #[cfg(target_family = "unix")]
+        {
+            signal_storage.push((signal(SignalKind::hangup())?, "HUP"));
+            signal_storage.push((signal(SignalKind::interrupt())?, "INT"));
+            signal_storage.push((signal(SignalKind::pipe())?, "PIPE"));
+            signal_storage.push((signal(SignalKind::quit())?, "QUIT"));
+            signal_storage.push((signal(SignalKind::terminate())?, "TERM"));
+            for (s_fut, s_name) in &mut signal_storage {
+                signaled.push(s_fut.recv().then(|opt| async move { opt.map(|_| s_name) }));
+            }
+        }
+        #[cfg(not(target_family = "unix"))]
+        signaled.push(std::future::pending());
+
         let mut ws_stream = WebSocketStream::from_raw_socket(upgraded, Role::Client, None).await;
+
         loop {
             tokio::select! {
                 in_buf = self.read_stdin() => {
@@ -211,6 +239,13 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
                             break;
                         }
                         _ => continue,
+                    }
+                }
+                Some(Some(signal_name)) = signaled.next() => {
+                    #[cfg(target_family = "unix")]
+                    {
+                        eprint!("\r\nExiting on signal.\r\n");
+                        return Err(Error::Signal(signal_name));
                     }
                 }
             }
