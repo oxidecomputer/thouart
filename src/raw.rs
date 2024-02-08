@@ -147,6 +147,13 @@ mod platform_impl {
             if r == -1 {
                 Err::<(), _>(std::io::Error::last_os_error()).unwrap();
             }
+            // if we have a terminfo database and this terminal is in it,
+            // try to exit the alternate buffer in case we were left there.
+            if let Ok(info) = terminfo::Database::from_env() {
+                if let Some(rmcup) = info.get::<terminfo::capability::ExitCaMode>() {
+                    rmcup.expand().to(std::io::stdout()).unwrap();
+                }
+            }
         }
     }
 }
