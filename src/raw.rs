@@ -126,7 +126,8 @@ mod platform_impl {
     ///
     /// Additionally, if the terminfo database for the current terminal is
     /// available, the reset sequences from it are emitted to return it from
-    /// any unknown state. Failures in finding or outputting these are ignored.
+    /// any unknown state. Failures in finding these in terminfo are ignored,
+    /// but failure to output them to the terminal will also panic.
     pub struct RawModeGuard(libc::c_int, libc::termios);
 
     impl RawModeGuard {
@@ -169,32 +170,35 @@ mod platform_impl {
                 );
             }
             // if we have a terminfo database and this terminal is in it,
-            // try to emit the strings to reset from an indeterminate state.
-            // (similar to `tput reset`)
-            if let Ok(info) = terminfo::Database::from_env() {
+            // try to emit ANSI strings to reset from an indeterminate state.
+            if let Ok(info) = termini::TermInfo::from_env() {
+                use std::io::Write;
+                use termini::StringCapability::*;
                 let mut stdout = unsafe { std::fs::File::from_raw_fd(self.0) };
-                if let Some(rs1) = info.get::<terminfo::capability::Reset1String>() {
-                    rs1.expand().to(&mut stdout).unwrap();
+                for cap in [ExitAlternativeMode, CursorNormal, ExitAttributeMode] {
+                    if let Some(s) = info.raw_string_cap(cap) {
+                        stdout.write_all(s).ok();
+                    }
                 }
-                if let Some(rs2) = info.get::<terminfo::capability::Reset2String>() {
-                    rs2.expand().to(&mut stdout).unwrap();
+                // disable mouse mode, which takes a parameter (see section
+                // "Parameterized Strings" in terminfo(5) - needs variable
+                // expansion support. in practice this will always result
+                // in b"\x1b[1006;1000l" or similar, but let's be thorough)
+                if let Some(val) = info.extended_cap("XM") {
+                    let xm = match val {
+                        termini::Value::RawString(raw) => raw,
+                        termini::Value::Utf8String(s) => s.as_bytes(),
+                        _ => &[], // do nothing
+                    };
+                    if let Ok(exp) = term::terminfo::parm::expand(
+                        xm,
+                        &[term::terminfo::parm::Param::Number(0)],
+                        &mut term::terminfo::parm::Variables::new(),
+                    ) {
+                        stdout.write_all(&exp).ok();
+                    }
                 }
-                // the order here comes from the X/Open Curses Issue 4 Version 2
-                // technical standard, repeated in the terminfo(5) manpage:
-                // "Sequences that do a reset from a totally unknown state
-                // can be given as rs1, rs2, rf and rs3"
-                if let Some(rf) = info.get::<terminfo::capability::ResetFile>() {
-                    rf.expand()
-                        .to_vec()
-                        .ok()
-                        .and_then(|path_vec| String::from_utf8(path_vec).ok())
-                        .and_then(|path| std::fs::File::open(path).ok())
-                        .and_then(|mut f| std::io::copy(&mut f, &mut stdout).ok());
-                }
-                if let Some(rs3) = info.get::<terminfo::capability::Reset3String>() {
-                    rs3.expand().to(&mut stdout).unwrap();
-                }
-                // relinquish ownership - we may not want to close on drop
+                // relinquish ownership again - we may not want to close on drop
                 stdout.into_raw_fd();
             }
         }
