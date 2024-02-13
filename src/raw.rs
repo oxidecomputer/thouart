@@ -197,6 +197,11 @@ mod platform_impl {
                     ) {
                         stdout.write_all(&exp).ok();
                     }
+                } else {
+                    // despite it all, some terminfo entries are missing "XM"
+                    // this despite being likely to be used in conjunction with
+                    // mouse functionality -- tmux and screen, for example
+                    stdout.write_all(b"\x1b[1006;1000l").ok();
                 }
                 // relinquish ownership again - we may not want to close on drop
                 stdout.into_raw_fd();
