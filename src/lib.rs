@@ -66,6 +66,14 @@ pub struct Console<O: AsyncWriteExt + Unpin + Send> {
     raw_guard: Option<RawModeGuard>,
 }
 
+impl Console<tokio::io::Stdout> {
+    /// Construct with the normal stdin and stdout file descriptors, for
+    /// typical use.
+    pub async fn new_stdio(escape: Option<EscapeSequence>) -> Result<Self, Error> {
+        Console::new(tokio::io::stdin(), tokio::io::stdout(), escape).await
+    }
+}
+
 impl<O: AsyncWriteExt + Unpin + Send + AsRawFdHandle> Console<O> {
     /// Construct with arbitrary [AsyncReadExt] and [AsyncWriteExt] streams,
     /// supporting use cases where we might be talking to something other than
@@ -86,15 +94,16 @@ impl<O: AsyncWriteExt + Unpin + Send + AsRawFdHandle> Console<O> {
     }
 }
 
-impl Console<tokio::io::Stdout> {
-    /// Construct with the normal stdin and stdout file descriptors, for
-    /// typical use.
-    pub async fn new_stdio(escape: Option<EscapeSequence>) -> Result<Self, Error> {
-        Console::new(tokio::io::stdin(), tokio::io::stdout(), escape).await
-    }
-}
+// this is really silly. in order to test reasonably with a tokio::io::duplex,
+// which doesn't impl AsRawHandle, we only use the trait bound required by the
+// raw Win32 API call path in non-tests, and use a dummy trait here otherwise
+// to reduce code duplication.
+#[cfg(any(test, not(target_family = "windows")))]
+use std::marker::Sized as MightBeRawHandle;
+#[cfg(all(not(test), target_family = "windows"))]
+use std::os::windows::io::AsRawHandle as MightBeRawHandle;
 
-impl<O: AsyncWriteExt + Unpin + Send> Console<O> {
+impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
     fn new_inner<I: AsyncReadExt + Unpin + Send + 'static>(
         stdin: I,
         stdout: O,
@@ -125,8 +134,30 @@ impl<O: AsyncWriteExt + Unpin + Send> Console<O> {
 
     /// Write the given bytes to stdout.
     pub async fn write_stdout(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        self.stdout.write_all(bytes).await?;
-        self.stdout.flush().await?;
+        // windows io in rust fails if any byte sequences aren't valid utf8
+        #[cfg(all(not(test), target_family = "windows"))]
+        {
+            use winapi::shared::minwindef::LPDWORD;
+            use winapi::um::winnt::{HANDLE, VOID};
+            let mut _lp_num_of_chars_written = 0u32;
+            let res = unsafe {
+                winapi::um::consoleapi::WriteConsoleA(
+                    self.stdout.as_raw_handle() as HANDLE,
+                    bytes.as_ptr() as *const VOID,
+                    bytes.len() as u32,
+                    (&mut _lp_num_of_chars_written) as LPDWORD,
+                    std::ptr::null_mut::<VOID>(),
+                )
+            };
+            if res == 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+        #[cfg(any(test, not(target_family = "windows")))]
+        {
+            self.stdout.write_all(bytes).await?;
+            self.stdout.flush().await?;
+        }
         Ok(())
     }
 
