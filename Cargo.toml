@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-futures = "0.3.28"
+futures = "0.3.30"
 libc = "0.2"
 regex = "1"
 term = "0.7"
