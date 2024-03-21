@@ -352,7 +352,6 @@ mod tests {
         timeout(ONE_SEC, join_handle).await.unwrap().unwrap();
     }
 
-    #[cfg(target_family = "unix")]
     #[tokio::test]
     async fn test_cleanup_on_signal() {
         let (_in_testdrv, in_console) = tokio::io::duplex(16);
@@ -377,13 +376,30 @@ mod tests {
             .unwrap();
         assert_eq!(read_buf, [1, 2, 3, 4, 5, 6]);
 
-        let syscall_return = unsafe { libc::kill(std::process::id() as libc::c_int, libc::SIGINT) };
-        assert_eq!(syscall_return, 0);
+        #[cfg(target_family = "unix")]
+        {
+            let syscall_return =
+                unsafe { libc::kill(std::process::id() as libc::c_int, libc::SIGINT) };
+            assert_eq!(syscall_return, 0);
 
-        let Err(super::Error::Signal("INT")) =
-            timeout(ONE_SEC, join_handle).await.unwrap().unwrap()
-        else {
-            panic!("Expected SIGINT!")
-        };
+            let Err(super::Error::Signal("INT")) =
+                timeout(ONE_SEC, join_handle).await.unwrap().unwrap()
+            else {
+                panic!("Expected SIGINT!")
+            };
+        }
+        #[cfg(target_family = "windows")]
+        {
+            use winapi::um::wincon::*;
+            let syscall_return =
+                unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, std::process::id()) };
+            assert_ne!(syscall_return, 0);
+
+            let Err(super::Error::Signal("CTRL-BREAK")) =
+                timeout(ONE_SEC, join_handle).await.unwrap().unwrap()
+            else {
+                panic!("Expected CTRL-BREAK!")
+            };
+        }
     }
 }
