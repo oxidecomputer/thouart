@@ -391,8 +391,7 @@ mod tests {
         #[cfg(target_family = "windows")]
         {
             use winapi::um::wincon::*;
-            let syscall_return =
-                unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, std::process::id()) };
+            let syscall_return = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, 0) };
             assert_ne!(syscall_return, 0);
 
             let Err(super::Error::Signal("CTRL-BREAK")) =
