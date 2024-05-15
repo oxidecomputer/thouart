@@ -5,6 +5,10 @@ use thouart::Console;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let mut cons = Console::new_stdio(None).await?;
+
+    // force raw-mode initialization
+    cons.write_stdout(&[]).await?;
+
     let mut buffer = vec![];
     loop {
         let (read_fut, write_fut) = if buffer.is_empty() {
