@@ -236,10 +236,10 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
         #[cfg(target_family = "windows")]
         {
             // no ctrl_c(), we're already in VT100 mode, and raw mode in that
-            signal_storage.push((WinCtrlSignal::CBreak(ctrl_break()?), "CTRL-BREAK"));
-            signal_storage.push((WinCtrlSignal::CClose(ctrl_close()?), "CTRL-CLOSE"));
-            signal_storage.push((WinCtrlSignal::CLogoff(ctrl_logoff()?), "CTRL-LOGOFF"));
-            signal_storage.push((WinCtrlSignal::CShutdown(ctrl_shutdown()?), "CTRL-SHUTDOWN"));
+            signal_storage.push((WinCtrlSignal::Break(ctrl_break()?), "CTRL-BREAK"));
+            signal_storage.push((WinCtrlSignal::Close(ctrl_close()?), "CTRL-CLOSE"));
+            signal_storage.push((WinCtrlSignal::Logoff(ctrl_logoff()?), "CTRL-LOGOFF"));
+            signal_storage.push((WinCtrlSignal::Shutdown(ctrl_shutdown()?), "CTRL-SHUTDOWN"));
         }
 
         for (s_fut, s_name) in &mut signal_storage {
@@ -303,19 +303,19 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
 // unfortunately tokio::signal makes these all separate types...
 #[cfg(target_family = "windows")]
 enum WinCtrlSignal {
-    CBreak(CtrlBreak),
-    CClose(CtrlClose),
-    CLogoff(CtrlLogoff),
-    CShutdown(CtrlShutdown),
+    Break(CtrlBreak),
+    Close(CtrlClose),
+    Logoff(CtrlLogoff),
+    Shutdown(CtrlShutdown),
 }
 #[cfg(target_family = "windows")]
 impl WinCtrlSignal {
     async fn recv(&mut self) -> Option<()> {
         match self {
-            Self::CBreak(c) => c.recv().await,
-            Self::CClose(c) => c.recv().await,
-            Self::CLogoff(c) => c.recv().await,
-            Self::CShutdown(c) => c.recv().await,
+            Self::Break(c) => c.recv().await,
+            Self::Close(c) => c.recv().await,
+            Self::Logoff(c) => c.recv().await,
+            Self::Shutdown(c) => c.recv().await,
         }
     }
 }
