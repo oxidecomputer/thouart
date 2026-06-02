@@ -303,7 +303,6 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
 // unfortunately tokio::signal makes these all separate types...
 #[cfg(target_family = "windows")]
 enum WinCtrlSignal {
-    CC(CtrlC),
     CBreak(CtrlBreak),
     CClose(CtrlClose),
     CLogoff(CtrlLogoff),
@@ -313,7 +312,6 @@ enum WinCtrlSignal {
 impl WinCtrlSignal {
     async fn recv(&mut self) -> Option<()> {
         match self {
-            Self::CC(c) => c.recv().await,
             Self::CBreak(c) => c.recv().await,
             Self::CClose(c) => c.recv().await,
             Self::CLogoff(c) => c.recv().await,
