@@ -1,6 +1,11 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
 
+// tokio::io::stdin() on Windows uses IOCP which does not work with the console
+// handles provided by portable_pty's ConPTY, so reads never return data and
+// the test hangs. The behavior under test (raw mode, ctrl+C as a byte) is not
+// automatically verifiable on Windows without a different approach.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_portable_pty() -> Result<(), Box<dyn std::error::Error>> {
     let pty_system = native_pty_system();

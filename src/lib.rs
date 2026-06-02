@@ -57,6 +57,7 @@ enum RawModeGuardState {
     },
     #[cfg(target_family = "unix")]
     PreInit(std::os::fd::RawFd),
+    #[allow(dead_code)]
     Initialized(RawModeGuard),
 }
 
@@ -235,10 +236,10 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
         #[cfg(target_family = "windows")]
         {
             // no ctrl_c(), we're already in VT100 mode, and raw mode in that
-            signal_storage.push((WinCtrlSignal::CBreak(ctrl_break()?), "CTRL-BREAK"));
-            signal_storage.push((WinCtrlSignal::CClose(ctrl_close()?), "CTRL-CLOSE"));
-            signal_storage.push((WinCtrlSignal::CLogoff(ctrl_logoff()?), "CTRL-LOGOFF"));
-            signal_storage.push((WinCtrlSignal::CShutdown(ctrl_shutdown()?), "CTRL-SHUTDOWN"));
+            signal_storage.push((WinCtrlSignal::Break(ctrl_break()?), "CTRL-BREAK"));
+            signal_storage.push((WinCtrlSignal::Close(ctrl_close()?), "CTRL-CLOSE"));
+            signal_storage.push((WinCtrlSignal::Logoff(ctrl_logoff()?), "CTRL-LOGOFF"));
+            signal_storage.push((WinCtrlSignal::Shutdown(ctrl_shutdown()?), "CTRL-SHUTDOWN"));
         }
 
         for (s_fut, s_name) in &mut signal_storage {
@@ -252,7 +253,7 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
                 in_buf = self.read_stdin() => {
                     match in_buf {
                         Some(data) => {
-                            ws_stream.send(Message::Binary(data)).await?;
+                            ws_stream.send(Message::Binary(data.into())).await?;
                         }
                         None => break,
                     }
@@ -302,21 +303,19 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
 // unfortunately tokio::signal makes these all separate types...
 #[cfg(target_family = "windows")]
 enum WinCtrlSignal {
-    CC(CtrlC),
-    CBreak(CtrlBreak),
-    CClose(CtrlClose),
-    CLogoff(CtrlLogoff),
-    CShutdown(CtrlShutdown),
+    Break(CtrlBreak),
+    Close(CtrlClose),
+    Logoff(CtrlLogoff),
+    Shutdown(CtrlShutdown),
 }
 #[cfg(target_family = "windows")]
 impl WinCtrlSignal {
     async fn recv(&mut self) -> Option<()> {
         match self {
-            Self::CC(c) => c.recv().await,
-            Self::CBreak(c) => c.recv().await,
-            Self::CClose(c) => c.recv().await,
-            Self::CLogoff(c) => c.recv().await,
-            Self::CShutdown(c) => c.recv().await,
+            Self::Break(c) => c.recv().await,
+            Self::Close(c) => c.recv().await,
+            Self::Logoff(c) => c.recv().await,
+            Self::Shutdown(c) => c.recv().await,
         }
     }
 }
@@ -357,7 +356,7 @@ mod tests {
             console.attach_to_websocket(ws_console).await.unwrap();
         });
 
-        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6]))
+        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6].into()))
             .await
             .unwrap();
 
@@ -373,18 +372,18 @@ mod tests {
         // [0, 1] should be sent through so far.
         in_testdrv.write(&[0, 1, 2]).await.unwrap();
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
-        assert_eq!(msg, Message::Binary(vec![0, 1]));
+        assert_eq!(msg, Message::Binary(vec![0, 1].into()));
 
         // this isn't 3, so this should bail from the EscapeSequence and send
         // the previously-witheld 2 now we know it's not part of an escape.
         in_testdrv.write(&[4, 5]).await.unwrap();
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
-        assert_eq!(msg, Message::Binary(vec![2, 4, 5]));
+        assert_eq!(msg, Message::Binary(vec![2, 4, 5].into()));
 
         // this should trigger EscapeSequence and send a Close frame.
         in_testdrv.write(&[0, 1, 2, 3, 4]).await.unwrap();
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
-        assert_eq!(msg, Message::Binary(vec![0, 1]));
+        assert_eq!(msg, Message::Binary(vec![0, 1].into()));
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
         assert_eq!(msg, Message::Close(None));
 
@@ -406,7 +405,7 @@ mod tests {
         let join_handle =
             tokio::spawn(async move { console.attach_to_websocket(ws_console).await });
 
-        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6]))
+        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6].into()))
             .await
             .unwrap();
 
