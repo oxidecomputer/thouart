@@ -57,6 +57,7 @@ enum RawModeGuardState {
     },
     #[cfg(target_family = "unix")]
     PreInit(std::os::fd::RawFd),
+    #[allow(dead_code)]
     Initialized(RawModeGuard),
 }
 

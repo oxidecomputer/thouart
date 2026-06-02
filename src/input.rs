@@ -47,11 +47,9 @@ pub(crate) async fn stdin_relay_task(
             let (outbuf, exit) = esc_sequence.process(inbuf);
 
             // Send what we have, even if we're about to exit.
-            if !outbuf.is_empty() {
-                if wstx.send(outbuf).await.is_err() {
-                    // if the channel's closed, no point going on
-                    break;
-                }
+            if !outbuf.is_empty() && wstx.send(outbuf).await.is_err() {
+                // if the channel's closed, no point going on
+                break;
             }
 
             if exit {

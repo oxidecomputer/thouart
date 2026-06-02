@@ -12,7 +12,7 @@ jobs:
     - name: Format
       run: cargo fmt -- --check
     - name: Lint
-      run: cargo clippy -- --no-deps
+      run: cargo clippy --no-deps -- -D warnings
     - name: Build
       run: cargo build
     - name: Test
