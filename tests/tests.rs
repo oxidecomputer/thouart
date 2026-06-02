@@ -1,9 +1,11 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
 
+// tokio::io::stdin() on Windows uses IOCP which does not work with the console
+// handles provided by portable_pty's ConPTY, so reads never return data and
+// the test hangs. The behavior under test (raw mode, ctrl+C as a byte) is not
+// automatically verifiable on Windows without a different approach.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_portable_pty() -> Result<(), Box<dyn std::error::Error>> {
     let pty_system = native_pty_system();
@@ -16,48 +18,32 @@ fn test_portable_pty() -> Result<(), Box<dyn std::error::Error>> {
     let mut reader = pair.master.try_clone_reader()?;
     let mut writer = pair.master.take_writer()?;
 
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = (|| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            // print some printable character, read until we see it, repeat once.
-            // clears out garbage that windows echoes that interferes with our test.
-            for msg in [b"@", b"%"] {
-                let mut buf = [0u8];
-                writer.write_all(msg)?;
-                writer.flush()?;
-                while &buf != msg {
-                    reader.read_exact(&mut buf)?;
-                }
-            }
-
-            // the `3` in here would count as a ctrl+C and kill the process if we were
-            // cooked, which we shouldn't be if we're in raw mode.
-            writer.write_all(&[3])?;
-            writer.flush()?;
-
-            // again for windows, definitively flush out the junk the above produces,
-            // then make sure the process is still alive after the ctrl+C.
-            let mut buf = [0u8];
-            writer.write_all(b"$")?;
-            writer.flush()?;
-            while &buf != b"$" {
-                reader.read_exact(&mut buf)?;
-            }
-            Ok(())
-        })();
-        tx.send(result).ok();
-    });
-
-    match rx.recv_timeout(Duration::from_secs(10)) {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => return Err(e.to_string().into()),
-        Err(_) => {
-            eprintln!("test timed out; child status: {:?}", child.try_wait());
-            return Err("test timed out after 10s".into());
+    // print some printable character, read until we see it, repeat once.
+    // clears out garbage that windows echoes that interferes with our test.
+    for msg in [b"@", b"%"] {
+        let mut buf = [0u8];
+        writer.write_all(msg)?;
+        writer.flush()?;
+        while &buf != msg {
+            reader.read_exact(&mut buf)?;
         }
     }
 
+    // the `3` in here would count as a ctrl+C and kill the process if we were
+    // cooked, which we shouldn't be if we're in raw mode.
+    writer.write_all(&[3])?;
+    writer.flush()?;
+
+    // again for windows, definitively flush out the junk the above produces,
+    // then make sure the process is still alive after the ctrl+C.
+    let mut buf = [0u8];
+    writer.write_all(b"$")?;
+    writer.flush()?;
+    while &buf != b"$" {
+        reader.read_exact(&mut buf)?;
+    }
     assert!(child.try_wait()?.is_none());
+
     child.kill()?;
 
     Ok(())

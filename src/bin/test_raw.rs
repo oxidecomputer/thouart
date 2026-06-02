@@ -4,13 +4,10 @@ use thouart::Console;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    eprintln!("test_raw: starting");
     let mut cons = Console::new_stdio(None).await?;
-    eprintln!("test_raw: console created");
 
     // force raw-mode initialization
     cons.write_stdout(&[]).await?;
-    eprintln!("test_raw: raw mode initialized");
 
     let mut buffer = vec![];
     loop {
@@ -31,6 +28,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
             }
         }
     }
-    eprintln!("test_raw: exiting");
     Ok(())
 }
