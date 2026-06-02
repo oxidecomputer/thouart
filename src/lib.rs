@@ -252,7 +252,7 @@ impl<O: AsyncWriteExt + Unpin + Send + MightBeRawHandle> Console<O> {
                 in_buf = self.read_stdin() => {
                     match in_buf {
                         Some(data) => {
-                            ws_stream.send(Message::Binary(data)).await?;
+                            ws_stream.send(Message::Binary(data.into())).await?;
                         }
                         None => break,
                     }
@@ -357,7 +357,7 @@ mod tests {
             console.attach_to_websocket(ws_console).await.unwrap();
         });
 
-        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6]))
+        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6].into()))
             .await
             .unwrap();
 
@@ -373,18 +373,18 @@ mod tests {
         // [0, 1] should be sent through so far.
         in_testdrv.write(&[0, 1, 2]).await.unwrap();
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
-        assert_eq!(msg, Message::Binary(vec![0, 1]));
+        assert_eq!(msg, Message::Binary(vec![0, 1].into()));
 
         // this isn't 3, so this should bail from the EscapeSequence and send
         // the previously-witheld 2 now we know it's not part of an escape.
         in_testdrv.write(&[4, 5]).await.unwrap();
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
-        assert_eq!(msg, Message::Binary(vec![2, 4, 5]));
+        assert_eq!(msg, Message::Binary(vec![2, 4, 5].into()));
 
         // this should trigger EscapeSequence and send a Close frame.
         in_testdrv.write(&[0, 1, 2, 3, 4]).await.unwrap();
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
-        assert_eq!(msg, Message::Binary(vec![0, 1]));
+        assert_eq!(msg, Message::Binary(vec![0, 1].into()));
         let msg = timeout(ONE_SEC, ws.next()).await.unwrap().unwrap().unwrap();
         assert_eq!(msg, Message::Close(None));
 
@@ -406,7 +406,7 @@ mod tests {
         let join_handle =
             tokio::spawn(async move { console.attach_to_websocket(ws_console).await });
 
-        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6]))
+        ws.send(Message::Binary(vec![1, 2, 3, 4, 5, 6].into()))
             .await
             .unwrap();
 

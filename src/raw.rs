@@ -204,7 +204,7 @@ mod platform_impl {
                     stdout.write_all(b"\x1b[1006;1000l").ok();
                 }
                 // relinquish ownership again - we may not want to close on drop
-                stdout.into_raw_fd();
+                let _ = stdout.into_raw_fd();
             }
         }
     }
